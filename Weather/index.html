@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ThoiTietVN – Dự báo thời tiết thông minh</title>
+  <meta name="description"
+    content="Xem dự báo thời tiết chi tiết theo giờ và 5 ngày cho mọi thành phố tại Việt Nam và thế giới. Powered by OpenWeatherMap." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <!-- Animated background orbs -->
+  <div class="bg-orbs" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="logo">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="3" fill="url(#sunGrad)" />
+        <line x1="12" y1="1" x2="12" y2="4" stroke="url(#sunGrad)" stroke-width="2.5" stroke-linecap="round" />
+        <line x1="12" y1="20" x2="12" y2="23" stroke="url(#sunGrad)" stroke-width="2.5" stroke-linecap="round" />
+        <line x1="4.22" y1="4.22" x2="6.34" y2="6.34" stroke="url(#sunGrad)" stroke-width="2.5"
+          stroke-linecap="round" />
+        <line x1="17.66" y1="17.66" x2="19.78" y2="19.78" stroke="url(#sunGrad)" stroke-width="2.5"
+          stroke-linecap="round" />
+        <line x1="1" y1="12" x2="4" y2="12" stroke="url(#sunGrad)" stroke-width="2.5" stroke-linecap="round" />
+        <line x1="20" y1="12" x2="23" y2="12" stroke="url(#sunGrad)" stroke-width="2.5" stroke-linecap="round" />
+        <line x1="4.22" y1="19.78" x2="6.34" y2="17.66" stroke="url(#sunGrad)" stroke-width="2.5"
+          stroke-linecap="round" />
+        <line x1="17.66" y1="6.34" x2="19.78" y2="4.22" stroke="url(#sunGrad)" stroke-width="2.5"
+          stroke-linecap="round" />
+        <defs>
+          <linearGradient id="sunGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#fb923c" />
+            <stop offset="100%" stop-color="#f59e0b" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <span>ThoiTietVN</span>
+    </div>
+    <nav class="header-actions">
+      <button id="unitToggleBtn" class="unit-toggle" title="Đổi đơn vị nhiệt độ" aria-label="Đổi đơn vị nhiệt độ">
+        <span id="unitLabel">°C</span>
+      </button>
+      <button id="settingsBtn" class="icon-btn" title="Cài đặt API Key" aria-label="Mở cài đặt API Key">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+    </nav>
+  </header>
+
+  <main class="main-content">
+    <!-- Hero Section -->
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-badge">🌤️ Powered by OpenWeatherMap</div>
+      <h1 id="hero-title" class="hero-title">
+        Dự báo thời tiết,<br />
+        <span class="gradient-text">chính xác &amp; nhanh chóng</span>
+      </h1>
+      <p class="hero-subtitle">Nhập tên thành phố để xem nhiệt độ, độ ẩm, tốc độ gió và dự báo 5 ngày tới.</p>
+
+      <!-- Search Form -->
+      <form id="searchForm" class="search-form" role="search" aria-label="Tìm kiếm thành phố">
+        <div class="search-wrapper">
+          <div class="search-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </div>
+          <input id="searchInput" type="text" class="search-input" placeholder="VD: Hà Nội, TP. Hồ Chí Minh, Đà Nẵng..."
+            autocomplete="off" aria-label="Nhập tên thành phố" required />
+          <button id="clearBtn" class="clear-btn" type="button" aria-label="Xóa nội dung" hidden>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+          <button id="locationBtn" class="location-btn" type="button" title="Dùng vị trí của tôi"
+            aria-label="Lấy vị trí hiện tại">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+          </button>
+          <button id="searchBtn" type="submit" class="search-btn" aria-label="Tìm kiếm">
+            <span class="btn-text">Tìm kiếm</span>
+            <svg class="btn-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12" />
+              <polyline points="12 5 19 12 12 19" />
+            </svg>
+          </button>
+        </div>
+        <!-- Autocomplete Suggestions Dropdown -->
+        <div id="searchSuggestions" class="search-suggestions" hidden role="listbox" aria-label="Gợi ý địa điểm"></div>
+      </form>
+
+      <!-- City Browser – 63 tỉnh/thành Việt Nam theo tọa độ GPS -->
+      <div class="city-browser" aria-label="Trình duyệt thành phố Việt Nam">
+        <div class="city-browser-header">
+          <span class="city-browser-title">🇻🇳 63 Tỉnh / Thành phố</span>
+          <div class="region-tabs" role="tablist" aria-label="Chọn miền">
+            <button class="region-tab active" role="tab" aria-selected="true" data-region="north">🏔️ Miền Bắc
+              (25)</button>
+            <button class="region-tab" role="tab" aria-selected="false" data-region="central">🌊 Miền Trung
+              (19)</button>
+            <button class="region-tab" role="tab" aria-selected="false" data-region="south">🌴 Miền Nam (19)</button>
+          </div>
+          <button id="cityBrowserToggle" class="city-browser-toggle" aria-label="Ẩn/hiện danh sách">
+            <svg id="toggleChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="18 15 12 9 6 15" />
+            </svg>
+          </button>
+        </div>
+
+        <div id="cityBrowserBody" class="city-browser-body">
+
+          <!-- ═══ MIỀN BẮC (25 tỉnh/thành) ═══ -->
+          <div class="region-panel active" data-panel="north" role="tabpanel">
+            <div class="city-chips-grid">
+              <button class="chip" data-lat="21.0285" data-lon="105.8542" data-label="Hà Nội">🏛️ Hà Nội</button>
+              <button class="chip" data-lat="20.8449" data-lon="106.6881" data-label="Hải Phòng">⚓ Hải Phòng</button>
+              <button class="chip" data-lat="20.9597" data-lon="107.0436" data-label="Quảng Ninh">🏖️ Quảng
+                Ninh</button>
+              <button class="chip" data-lat="21.1861" data-lon="106.0763" data-label="Bắc Ninh">🏛️ Bắc Ninh</button>
+              <button class="chip" data-lat="21.2718" data-lon="106.1947" data-label="Bắc Giang">🌿 Bắc Giang</button>
+              <button class="chip" data-lat="22.1477" data-lon="105.8344" data-label="Bắc Kạn">🌲 Bắc Kạn</button>
+              <button class="chip" data-lat="22.6661" data-lon="106.2622" data-label="Cao Bằng">⛰️ Cao Bằng</button>
+              <button class="chip" data-lat="21.8454" data-lon="106.7614" data-label="Lạng Sơn">🏯 Lạng Sơn</button>
+              <button class="chip" data-lat="22.8025" data-lon="104.9784" data-label="Hà Giang">🏔️ Hà Giang</button>
+              <button class="chip" data-lat="21.8232" data-lon="105.2142" data-label="Tuyên Quang">🌿 Tuyên
+                Quang</button>
+              <button class="chip" data-lat="21.7216" data-lon="104.9114" data-label="Yên Bái">🌾 Yên Bái</button>
+              <button class="chip" data-lat="22.4809" data-lon="103.9755" data-label="Lào Cai">🗻 Lào Cai</button>
+              <button class="chip" data-lat="22.3861" data-lon="103.4703" data-label="Lai Châu">🏔️ Lai Châu</button>
+              <button class="chip" data-lat="21.3856" data-lon="103.0232" data-label="Điện Biên">🌄 Điện Biên</button>
+              <button class="chip" data-lat="21.3272" data-lon="103.9144" data-label="Sơn La">🏕️ Sơn La</button>
+              <button class="chip" data-lat="20.8171" data-lon="105.3376" data-label="Hòa Bình">💧 Hòa Bình</button>
+              <button class="chip" data-lat="21.3002" data-lon="105.4012" data-label="Phú Thọ">🎋 Phú Thọ</button>
+              <button class="chip" data-lat="21.3095" data-lon="105.5973" data-label="Vĩnh Phúc">🌿 Vĩnh Phúc</button>
+              <button class="chip" data-lat="21.5943" data-lon="105.8480" data-label="Thái Nguyên">🍵 Thái
+                Nguyên</button>
+              <button class="chip" data-lat="20.6464" data-lon="106.0511" data-label="Hưng Yên">🌸 Hưng Yên</button>
+              <button class="chip" data-lat="20.9373" data-lon="106.3145" data-label="Hải Dương">🌾 Hải Dương</button>
+              <button class="chip" data-lat="20.4500" data-lon="106.3400" data-label="Thái Bình">🌊 Thái Bình</button>
+              <button class="chip" data-lat="20.5410" data-lon="105.9126" data-label="Hà Nam">🏞️ Hà Nam</button>
+              <button class="chip" data-lat="20.4200" data-lon="106.1683" data-label="Nam Định">🕌 Nam Định</button>
+              <button class="chip" data-lat="20.2506" data-lon="105.9745" data-label="Ninh Bình">⛩️ Ninh Bình</button>
+            </div>
+          </div>
+
+          <!-- ═══ MIỀN TRUNG & TÂY NGUYÊN (19 tỉnh/thành) ═══ -->
+          <div class="region-panel" data-panel="central" role="tabpanel">
+            <div class="city-chips-grid">
+              <button class="chip" data-lat="19.8067" data-lon="105.7852" data-label="Thanh Hóa">🏯 Thanh Hóa</button>
+              <button class="chip" data-lat="18.6796" data-lon="105.6813" data-label="Nghệ An">🌿 Nghệ An</button>
+              <button class="chip" data-lat="18.3560" data-lon="105.8878" data-label="Hà Tĩnh">🌊 Hà Tĩnh</button>
+              <button class="chip" data-lat="17.4833" data-lon="106.5996" data-label="Quảng Bình">🏖️ Quảng
+                Bình</button>
+              <button class="chip" data-lat="16.8200" data-lon="107.1000" data-label="Quảng Trị">🌿 Quảng Trị</button>
+              <button class="chip" data-lat="16.4637" data-lon="107.5909" data-label="Thừa Thiên Huế">🏯 Thừa Thiên
+                Huế</button>
+              <button class="chip" data-lat="16.0544" data-lon="108.2022" data-label="Đà Nẵng">🏖️ Đà Nẵng</button>
+              <button class="chip" data-lat="15.5736" data-lon="108.4736" data-label="Quảng Nam">🌾 Quảng Nam</button>
+              <button class="chip" data-lat="15.1203" data-lon="108.7922" data-label="Quảng Ngãi">🌊 Quảng Ngãi</button>
+              <button class="chip" data-lat="13.7765" data-lon="109.2237" data-label="Bình Định">🐠 Bình Định</button>
+              <button class="chip" data-lat="13.0956" data-lon="109.3028" data-label="Phú Yên">🌅 Phú Yên</button>
+              <button class="chip" data-lat="12.2388" data-lon="109.1967" data-label="Khánh Hòa">🏝️ Khánh Hòa</button>
+              <button class="chip" data-lat="11.5676" data-lon="108.9880" data-label="Ninh Thuận">🌵 Ninh Thuận</button>
+              <button class="chip" data-lat="10.9289" data-lon="108.1003" data-label="Bình Thuận">🌊 Bình Thuận</button>
+              <button class="chip" data-lat="14.3497" data-lon="108.0005" data-label="Kon Tum">🌲 Kon Tum</button>
+              <button class="chip" data-lat="13.9833" data-lon="108.0000" data-label="Gia Lai">⛰️ Gia Lai</button>
+              <button class="chip" data-lat="12.6667" data-lon="108.0500" data-label="Đắk Lắk">☕ Đắk Lắk</button>
+              <button class="chip" data-lat="12.0050" data-lon="107.6907" data-label="Đắk Nông">🌿 Đắk Nông</button>
+              <button class="chip" data-lat="11.9404" data-lon="108.4583" data-label="Lâm Đồng">🌸 Lâm Đồng</button>
+            </div>
+          </div>
+
+          <!-- ═══ MIỀN NAM (19 tỉnh/thành) ═══ -->
+          <div class="region-panel" data-panel="south" role="tabpanel">
+            <div class="city-chips-grid">
+              <button class="chip" data-lat="10.8231" data-lon="106.6297" data-label="TP. Hồ Chí Minh">🌆 TP. Hồ Chí
+                Minh</button>
+              <button class="chip" data-lat="10.0452" data-lon="105.7469" data-label="Cần Thơ">🌊 Cần Thơ</button>
+              <button class="chip" data-lat="10.9804" data-lon="106.6519" data-label="Bình Dương">🏭 Bình Dương</button>
+              <button class="chip" data-lat="10.9574" data-lon="106.8426" data-label="Đồng Nai">🏙️ Đồng Nai</button>
+              <button class="chip" data-lat="10.4113" data-lon="107.1362" data-label="Bà Rịa – Vũng Tàu">⚓ Bà Rịa – Vũng
+                Tàu</button>
+              <button class="chip" data-lat="11.5353" data-lon="106.8854" data-label="Bình Phước">🌿 Bình Phước</button>
+              <button class="chip" data-lat="11.3351" data-lon="106.1099" data-label="Tây Ninh">⛩️ Tây Ninh</button>
+              <button class="chip" data-lat="10.5353" data-lon="106.4100" data-label="Long An">🌾 Long An</button>
+              <button class="chip" data-lat="10.3600" data-lon="106.3600" data-label="Tiền Giang">🌊 Tiền Giang</button>
+              <button class="chip" data-lat="10.2333" data-lon="106.3833" data-label="Bến Tre">🥥 Bến Tre</button>
+              <button class="chip" data-lat="9.9347" data-lon="106.3453" data-label="Trà Vinh">🌿 Trà Vinh</button>
+              <button class="chip" data-lat="10.2538" data-lon="105.9722" data-label="Vĩnh Long">🌾 Vĩnh Long</button>
+              <button class="chip" data-lat="10.4667" data-lon="105.6333" data-label="Đồng Tháp">🦢 Đồng Tháp</button>
+              <button class="chip" data-lat="10.3785" data-lon="105.4350" data-label="An Giang">🏞️ An Giang</button>
+              <button class="chip" data-lat="10.0125" data-lon="105.0809" data-label="Kiên Giang">🏝️ Kiên
+                Giang</button>
+              <button class="chip" data-lat="9.7792" data-lon="105.4708" data-label="Hậu Giang">🌾 Hậu Giang</button>
+              <button class="chip" data-lat="9.6026" data-lon="105.9739" data-label="Sóc Trăng">🏯 Sóc Trăng</button>
+              <button class="chip" data-lat="9.2941" data-lon="105.7279" data-label="Bạc Liêu">🦐 Bạc Liêu</button>
+              <button class="chip" data-lat="9.1769" data-lon="105.1500" data-label="Cà Mau">🌿 Cà Mau</button>
+            </div>
+          </div>
+
+        </div><!-- end city-browser-body -->
+      </div><!-- end city-browser -->
+    </section>
+
+    <!-- Loading State -->
+    <div id="loadingState" class="loading-state" hidden aria-label="Đang tải" aria-busy="true">
+      <div class="loading-spinner">
+        <div class="spinner-sun"></div>
+        <div class="spinner-ring"></div>
+      </div>
+      <p class="loading-text">Đang lấy dữ liệu thời tiết...</p>
+    </div>
+
+    <!-- Error State -->
+    <div id="errorState" class="error-state" hidden role="alert">
+      <div class="error-icon">⛈️</div>
+      <h2 class="error-title">Đã xảy ra lỗi</h2>
+      <p id="errorMsg" class="error-msg"></p>
+      <button id="retryBtn" class="retry-btn">Thử lại</button>
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="empty-state" hidden>
+      <div class="empty-icon">🔍</div>
+      <h2 class="empty-title">Không tìm thấy thành phố</h2>
+      <p class="empty-msg">Hãy kiểm tra lại tên thành phố hoặc thử từ khóa khác.</p>
+    </div>
+
+    <!-- Weather Results -->
+    <section id="resultsSection" class="results-section" hidden aria-label="Kết quả thời tiết">
+
+      <!-- Current Weather Card -->
+      <div id="currentWeather" class="current-weather-card">
+        <div class="current-top">
+          <div class="current-location">
+            <div class="location-name">
+              <span id="cityName" class="city-name"></span>
+              <span id="countryName" class="country-name"></span>
+            </div>
+            <p id="localTime" class="local-time"></p>
+            <p id="weatherDesc" class="weather-desc"></p>
+          </div>
+          <div class="current-icon-wrap">
+            <img id="weatherIcon" src="" alt="" class="weather-icon-large" />
+          </div>
+        </div>
+        <div class="current-temp-row">
+          <span id="currentTemp" class="current-temp"></span>
+          <span id="tempUnit" class="temp-unit">°C</span>
+        </div>
+        <div class="current-details">
+          <div class="detail-item"><span class="detail-emoji">🌡️</span><span class="detail-label">Cảm giác
+              như</span><span id="feelsLike" class="detail-value"></span></div>
+          <div class="detail-item"><span class="detail-emoji">💧</span><span class="detail-label">Độ ẩm</span><span
+              id="humidity" class="detail-value"></span></div>
+          <div class="detail-item"><span class="detail-emoji">💨</span><span class="detail-label">Gió</span><span
+              id="windSpeed" class="detail-value"></span></div>
+          <div class="detail-item"><span class="detail-emoji">🔵</span><span class="detail-label">Áp suất</span><span
+              id="pressure" class="detail-value"></span></div>
+          <div class="detail-item"><span class="detail-emoji">👁️</span><span class="detail-label">Tầm nhìn</span><span
+              id="visibility" class="detail-value"></span></div>
+          <div class="detail-item"><span class="detail-emoji">🌅</span><span class="detail-label">Mặt trời
+              mọc</span><span id="sunrise" class="detail-value"></span></div>
+          <div class="detail-item"><span class="detail-emoji">🌇</span><span class="detail-label">Mặt trời
+              lặn</span><span id="sunset" class="detail-value"></span></div>
+          <div class="detail-item"><span class="detail-emoji">📊</span><span class="detail-label">Min / Max</span><span
+              id="tempMinMax" class="detail-value"></span></div>
+        </div>
+      </div>
+
+      <!-- Hourly Forecast -->
+      <div class="forecast-section">
+        <h2 class="section-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          Dự báo theo giờ
+        </h2>
+        <div id="hourlyScroll" class="hourly-scroll" role="list" aria-label="Dự báo thời tiết theo giờ"></div>
+      </div>
+
+      <!-- 3-Day Forecast -->
+      <div class="forecast-section">
+        <h2 class="section-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+          Dự báo 5 ngày
+        </h2>
+        <div id="dailyGrid" class="daily-grid" role="list" aria-label="Dự báo thời tiết 5 ngày"></div>
+      </div>
+
+      <!-- Environment Indicators -->
+      <div class="forecast-section">
+        <h2 class="section-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+          Chỉ số môi trường
+        </h2>
+        <div class="env-grid">
+          <div class="env-card">
+            <div class="env-icon">☀️</div>
+            <div class="env-label">Mây che phủ</div>
+            <div id="cloudiness" class="env-value">–</div>
+            <div class="env-bar-wrap">
+              <div id="cloudBar" class="env-bar"></div>
+            </div>
+          </div>
+          <div class="env-card">
+            <div class="env-icon">💧</div>
+            <div class="env-label">Độ ẩm không khí</div>
+            <div id="humidityEnv" class="env-value">–</div>
+            <div class="env-bar-wrap">
+              <div id="humidBar" class="env-bar"></div>
+            </div>
+          </div>
+          <div class="env-card">
+            <div class="env-icon">🌬️</div>
+            <div class="env-label">Tốc độ gió</div>
+            <div id="windValue" class="env-value">–</div>
+            <div id="windDirection" class="env-level"></div>
+          </div>
+          <div class="env-card">
+            <div class="env-icon">🌡️</div>
+            <div class="env-label">Nhiệt độ cảm nhận</div>
+            <div id="feelsLikeEnv" class="env-value">–</div>
+            <div id="feelsLevel" class="env-level"></div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- API Key Settings Modal -->
+  <div id="settingsModal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 id="settingsTitle" class="modal-title">⚙️ Cài đặt API Key</h2>
+        <button id="closeSettings" class="icon-btn" aria-label="Đóng cài đặt">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Nhập <strong>OpenWeatherMap API Key</strong> của bạn. Lấy key miễn phí tại <a
+            href="https://openweathermap.org/api" target="_blank" rel="noopener"
+            class="link">openweathermap.org/api</a>.</p>
+        <div class="input-group">
+          <label for="apiKeyInput" class="input-label">API Key</label>
+          <div class="api-input-wrapper">
+            <input id="apiKeyInput" type="password" class="text-input" placeholder="Dán API key của bạn vào đây..."
+              autocomplete="off" />
+            <button id="toggleKeyVisibility" class="toggle-vis-btn" type="button" aria-label="Hiển thị/ẩn API key">
+              <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="modal-info-box">
+          <p>🔐 API key được lưu cục bộ trong trình duyệt, không gửi lên server nào.</p>
+          <p style="margin-top:0.5rem;">📌 Key miễn phí: 1.000 lượt/ngày. Dữ liệu cập nhật mỗi 10 phút.</p>
+          <p style="margin-top:0.5rem;">⏳ Key mới cần <strong>10–120 phút</strong> để kích hoạt hoàn toàn.</p>
+        </div>
+        <div id="testKeyResult" class="test-key-result" hidden></div>
+      </div>
+      <div class="modal-footer">
+        <button id="testKeyBtn" class="btn-test">🔍 Kiểm tra Key</button>
+        <button id="cancelSettings" class="btn-ghost">Hủy</button>
+        <button id="saveSettings" class="btn-primary">Lưu &amp; Dùng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <footer class="site-footer">
+    <p>Dữ liệu thời tiết cung cấp bởi <a href="https://openweathermap.org" target="_blank" rel="noopener"
+        class="link">OpenWeatherMap</a> · Xây dựng với ❤️ bằng Vanilla JS</p>
+  </footer>
+
+  <script src="weather_benchmark.js"></script>
+  <script src="gemini_chatbot.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>
