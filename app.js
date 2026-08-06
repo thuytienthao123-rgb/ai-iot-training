@@ -1,674 +1,819 @@
 /**
- * ThoiTietVN – Weather Forecast App
- * app.js – Core application logic
- * Sử dụng OpenWeatherMap API (Current Weather + 5-day Forecast)
+ * VoiceAI — Main Application Logic
+ * ===================================
+ * STT: Groq Whisper API (via Flask proxy)
+ * TTS: edge-tts / Microsoft Edge cloud (via Flask proxy)
  */
 
-// ════════════════════════════════════════
-//  CONSTANTS & STATE
-// ════════════════════════════════════════
-const STORAGE_KEY  = 'owm_api_key';
-const BASE_URL     = 'https://api.openweathermap.org/data/2.5';
-const ICON_URL     = 'https://openweathermap.org/img/wn';
-
-const WIND_DIRS = ['Bắc','Đông Bắc','Đông','Đông Nam','Nam','Tây Nam','Tây','Tây Bắc'];
-
-const state = {
-  city:      '',
-  unit:      'metric',   // 'metric' (°C) | 'imperial' (°F)
-  current:   null,
-  forecast:  null,
-  isLoading: false,
-  lastQuery: '',
+/* ═══════════════════════════════════════════════
+   CONFIG
+   ═══════════════════════════════════════════════ */
+const CONFIG = {
+  serverUrl: localStorage.getItem('serverUrl') || 'http://localhost:5050',
+  groqApiKey: localStorage.getItem('groqApiKey') || '',
+  maxResponseMs: 5000,
 };
 
-// ════════════════════════════════════════
-//  DOM REFERENCES
-// ════════════════════════════════════════
+/* ═══════════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════════ */
+const state = {
+  currentMode: 'stt',         // 'stt' | 'tts'
+  sttSubMode: 'live',         // 'live' | 'standard'
+  isRecording: false,
+  globalStream: null,
+  mediaRecorder: null,
+  audioChunks: [],
+  recordingStartTime: null,
+  recordingTimer: null,
+  liveInterval: null,
+  animFrameId: null,
+  audioContext: null,
+  analyserNode: null,
+  audioEl: null,
+  lastAudioBlob: null,
+
+  // Stats
+  sttTimes: [],
+  ttsTimes: [],
+  totalUses: 0,
+
+  // History
+  history: JSON.parse(localStorage.getItem('voiceaiHistory') || '[]'),
+};
+
+/* ═══════════════════════════════════════════════
+   DOM HELPERS
+   ═══════════════════════════════════════════════ */
 const $ = id => document.getElementById(id);
 
-const searchForm    = $('searchForm');
-const searchInput   = $('searchInput');
-const clearBtn      = $('clearBtn');
-const locationBtn   = $('locationBtn');
-const searchBtn     = $('searchBtn');
+/* ═══════════════════════════════════════════════
+   INIT
+   ═══════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  $('serverUrl').value = CONFIG.serverUrl;
+  $('groqApiKey').value = CONFIG.groqApiKey;
+  initWaveform();
+  renderHistory();
+  checkServer();
+  state.audioEl = $('audioPlayer');
+  setupAudioPlayerEvents();
 
-const loadingState  = $('loadingState');
-const errorState    = $('errorState');
-const errorMsg      = $('errorMsg');
-const retryBtn      = $('retryBtn');
-const emptyState    = $('emptyState');
-const resultsSection = $('resultsSection');
+  // Load saved stats
+  const saved = JSON.parse(localStorage.getItem('voiceaiStats') || '{}');
+  if (saved.sttTimes) state.sttTimes = saved.sttTimes;
+  if (saved.ttsTimes) state.ttsTimes = saved.ttsTimes;
+  if (saved.totalUses) state.totalUses = saved.totalUses;
+  updatePerfDisplay();
+});
 
-// Current weather
-const cityNameEl    = $('cityName');
-const countryNameEl = $('countryName');
-const localTimeEl   = $('localTime');
-const weatherDescEl = $('weatherDesc');
-const weatherIconEl = $('weatherIcon');
-const currentTempEl = $('currentTemp');
-const tempUnitEl    = $('tempUnit');
-const feelsLikeEl   = $('feelsLike');
-const humidityEl    = $('humidity');
-const windSpeedEl   = $('windSpeed');
-const pressureEl    = $('pressure');
-const visibilityEl  = $('visibility');
-const sunriseEl     = $('sunrise');
-const sunsetEl      = $('sunset');
-const tempMinMaxEl  = $('tempMinMax');
-
-// Forecast
-const hourlyScrollEl = $('hourlyScroll');
-const dailyGridEl    = $('dailyGrid');
-
-// Env indicators
-const cloudinessEl  = $('cloudiness');
-const cloudBarEl    = $('cloudBar');
-const humidityEnvEl = $('humidityEnv');
-const humidBarEl    = $('humidBar');
-const windValueEl   = $('windValue');
-const windDirEl     = $('windDirection');
-const feelsLikeEnvEl= $('feelsLikeEnv');
-const feelsLevelEl  = $('feelsLevel');
-
-// Settings
-const settingsBtn   = $('settingsBtn');
-const settingsModal = $('settingsModal');
-const closeSettings = $('closeSettings');
-const cancelSettings= $('cancelSettings');
-const saveSettings  = $('saveSettings');
-const apiKeyInput   = $('apiKeyInput');
-const toggleKeyVis  = $('toggleKeyVisibility');
-const testKeyBtn    = $('testKeyBtn');
-const testKeyResult = $('testKeyResult');
-
-// Unit toggle
-const unitToggleBtn = $('unitToggleBtn');
-const unitLabelEl   = $('unitLabel');
-
-const toast = $('toast');
-
-// ════════════════════════════════════════
-//  API KEY MANAGEMENT
-// ════════════════════════════════════════
-function getApiKey() {
-  return localStorage.getItem(STORAGE_KEY) || '';
-}
-function saveApiKey(key) {
-  localStorage.setItem(STORAGE_KEY, key.trim());
-}
-
-// ════════════════════════════════════════
-//  TOAST
-// ════════════════════════════════════════
-let toastTimer = null;
-function showToast(message, type = 'default', duration = 3000) {
-  toast.textContent = message;
-  toast.className = `toast ${type} show`;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.className = 'toast'; }, duration);
-}
-
-// ════════════════════════════════════════
-//  UI STATE
-// ════════════════════════════════════════
-function setUIState(uiState) {
-  loadingState.hidden  = uiState !== 'loading';
-  errorState.hidden    = uiState !== 'error';
-  emptyState.hidden    = uiState !== 'empty';
-  resultsSection.hidden = uiState !== 'results';
-}
-
-function showError(message) {
-  errorMsg.textContent = message;
-  setUIState('error');
-  resetSearchBtn();
-  state.isLoading = false;
-}
-
-function updateSearchBtn(text) {
-  searchBtn.disabled = true;
-  searchBtn.style.opacity = '0.7';
-  const btnText = searchBtn.querySelector('.btn-text');
-  if (btnText) btnText.textContent = text;
-}
-
-function resetSearchBtn() {
-  searchBtn.disabled = false;
-  searchBtn.style.opacity = '1';
-  const btnText = searchBtn.querySelector('.btn-text');
-  if (btnText) btnText.textContent = 'Tìm kiếm';
-}
-
-// ════════════════════════════════════════
-//  HELPERS
-// ════════════════════════════════════════
-function tempLabel(val) {
-  return state.unit === 'metric' ? `${Math.round(val)}°C` : `${Math.round(val)}°F`;
-}
-
-function windLabel(ms) {
-  if (state.unit === 'metric') return `${Math.round(ms)} m/s`;
-  // ms là m/s, đổi sang mph
-  return `${Math.round(ms * 2.237)} mph`;
-}
-
-function windDegToDir(deg) {
-  const idx = Math.round(deg / 45) % 8;
-  return WIND_DIRS[idx];
-}
-
-function formatTime(unix, timezoneOffset) {
-  // timezoneOffset là giây lệch UTC từ API
-  const date = new Date((unix + timezoneOffset) * 1000);
-  const hh = String(date.getUTCHours()).padStart(2, '0');
-  const mm = String(date.getUTCMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
-}
-
-function formatDate(unix, timezoneOffset, opts = {}) {
-  const date = new Date((unix + timezoneOffset) * 1000);
-  const defaults = { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' };
-  return date.toLocaleDateString('vi-VN', { ...defaults, ...opts });
-}
-
-function getDayLabel(unix, timezoneOffset) {
-  const now = new Date();
-  const date = new Date((unix + timezoneOffset) * 1000);
-  const nowDay  = new Date((Math.floor(now.getTime()/1000) + timezoneOffset) * 1000).toISOString().slice(0,10);
-  const itemDay = new Date((unix + timezoneOffset) * 1000).toISOString().slice(0,10);
-
-  if (itemDay === nowDay) return 'Hôm nay';
-  return date.toLocaleDateString('vi-VN', { weekday: 'short', timeZone: 'UTC' });
-}
-
-function iconUrl(code, size = '2x') {
-  return `${ICON_URL}/${code}@${size}.png`;
-}
-
-function uvLevel(uvi) {
-  if (uvi <= 2) return { label: 'Thấp', color: '#4ade80' };
-  if (uvi <= 5) return { label: 'Trung bình', color: '#fbbf24' };
-  if (uvi <= 7) return { label: 'Cao', color: '#fb923c' };
-  if (uvi <= 10) return { label: 'Rất cao', color: '#f87171' };
-  return { label: 'Cực cao', color: '#c084fc' };
-}
-
-function feelsLabel(diff) {
-  if (diff < -3) return '🥶 Lạnh hơn thực tế';
-  if (diff > 3)  return '🥵 Nóng hơn thực tế';
-  return '😊 Gần như thực tế';
-}
-
-// ════════════════════════════════════════
-//  API CALLS
-// ════════════════════════════════════════
-async function fetchWeather(city) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error('API_KEY_MISSING');
-
-  const units = state.unit;
-  const [currentRes, forecastRes] = await Promise.all([
-    fetch(`${BASE_URL}/weather?q=${encodeURIComponent(city)}&units=${units}&lang=vi&appid=${apiKey}`),
-    fetch(`${BASE_URL}/forecast?q=${encodeURIComponent(city)}&units=${units}&lang=vi&cnt=40&appid=${apiKey}`),
-  ]);
-
-  if (!currentRes.ok) {
-    if (currentRes.status === 401) throw new Error('API_KEY_INVALID');
-    if (currentRes.status === 404) throw new Error('CITY_NOT_FOUND');
-    if (currentRes.status === 429) throw new Error('API_RATE_LIMIT');
-    throw new Error(`HTTP_${currentRes.status}`);
-  }
-
-  const current  = await currentRes.json();
-  const forecast = await forecastRes.json();
-  return { current, forecast };
-}
-
-async function fetchWeatherByCoords(lat, lon) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error('API_KEY_MISSING');
-
-  const units = state.unit;
-  const [currentRes, forecastRes] = await Promise.all([
-    fetch(`${BASE_URL}/weather?lat=${lat}&lon=${lon}&units=${units}&lang=vi&appid=${apiKey}`),
-    fetch(`${BASE_URL}/forecast?lat=${lat}&lon=${lon}&units=${units}&lang=vi&cnt=40&appid=${apiKey}`),
-  ]);
-
-  if (!currentRes.ok) {
-    if (currentRes.status === 401) throw new Error('API_KEY_INVALID');
-    if (currentRes.status === 429) throw new Error('API_RATE_LIMIT');
-    throw new Error(`HTTP_${currentRes.status}`);
-  }
-
-  const current  = await currentRes.json();
-  const forecast = await forecastRes.json();
-  return { current, forecast };
-}
-
-// ════════════════════════════════════════
-//  RENDER
-// ════════════════════════════════════════
-function renderCurrentWeather(data) {
-  const tz = data.timezone; // seconds offset from UTC
-
-  cityNameEl.textContent    = data.name;
-  countryNameEl.textContent = data.sys.country ? `(${data.sys.country})` : '';
-
-  // Thời gian địa phương
-  const now = Math.floor(Date.now() / 1000);
-  const localDate = new Date((now + tz) * 1000);
-  localTimeEl.textContent = localDate.toUTCString().replace(' GMT', '').slice(0, -3)
-    .replace(/(\w+), (\d+) (\w+) (\d+) (\d+:\d+)/, '$1, $2 $3 $4 — $5');
-  // Đơn giản hơn:
-  localTimeEl.textContent = `📅 ${formatDate(now, tz, { weekday:'long', day:'numeric', month:'long', year:'numeric' })} · ⏰ ${formatTime(now, tz)}`;
-
-  weatherDescEl.textContent = data.weather[0].description;
-
-  weatherIconEl.src = iconUrl(data.weather[0].icon, '4x');
-  weatherIconEl.alt = data.weather[0].description;
-
-  currentTempEl.textContent = Math.round(data.main.temp);
-  tempUnitEl.textContent    = state.unit === 'metric' ? '°C' : '°F';
-  tempUnitEl.id             = 'tempUnit'; // keep ref
-
-  feelsLikeEl.textContent   = tempLabel(data.main.feels_like);
-  humidityEl.textContent    = `${data.main.humidity}%`;
-  windSpeedEl.textContent   = windLabel(data.wind.speed) + (data.wind.deg ? ` ${windDegToDir(data.wind.deg)}` : '');
-  pressureEl.textContent    = `${data.main.pressure} hPa`;
-  visibilityEl.textContent  = data.visibility ? `${(data.visibility / 1000).toFixed(1)} km` : '–';
-  sunriseEl.textContent     = formatTime(data.sys.sunrise, tz);
-  sunsetEl.textContent      = formatTime(data.sys.sunset, tz);
-  tempMinMaxEl.textContent  = `${tempLabel(data.main.temp_min)} / ${tempLabel(data.main.temp_max)}`;
-
-  // Env indicators
-  const clouds = data.clouds?.all ?? 0;
-  cloudinessEl.textContent  = `${clouds}%`;
-  cloudBarEl.style.width    = `${clouds}%`;
-
-  const humid = data.main.humidity;
-  humidityEnvEl.textContent = `${humid}%`;
-  humidBarEl.style.width    = `${humid}%`;
-
-  const wspd = windLabel(data.wind.speed);
-  windValueEl.textContent   = wspd;
-  windDirEl.textContent     = data.wind.deg ? `Hướng: ${windDegToDir(data.wind.deg)}` : '';
-
-  const diff = data.main.feels_like - data.main.temp;
-  feelsLikeEnvEl.textContent = tempLabel(data.main.feels_like);
-  feelsLevelEl.textContent   = feelsLabel(diff);
-}
-
-function renderHourly(forecastData, tz) {
-  hourlyScrollEl.innerHTML = '';
-  // Lấy 24h tới (8 mục × 3h = 24h)
-  const items = forecastData.list.slice(0, 9);
-  items.forEach((item, i) => {
-    const card = document.createElement('div');
-    card.className = 'hourly-card' + (i === 0 ? ' highlight' : '');
-    card.setAttribute('role', 'listitem');
-
-    const pop = item.pop ? `💧 ${Math.round(item.pop * 100)}%` : '';
-    card.innerHTML = `
-      <span class="hourly-time">${i === 0 ? 'Bây giờ' : formatTime(item.dt, tz)}</span>
-      <img class="hourly-icon" src="${iconUrl(item.weather[0].icon)}" alt="${item.weather[0].description}" loading="lazy"/>
-      <span class="hourly-temp">${tempLabel(item.main.temp)}</span>
-      ${pop ? `<span class="hourly-pop">${pop}</span>` : ''}
-    `;
-    hourlyScrollEl.appendChild(card);
-  });
-}
-
-function renderDaily(forecastData, tz) {
-  dailyGridEl.innerHTML = '';
-
-  // Group by day
-  const dayMap = {};
-  forecastData.list.forEach(item => {
-    const day = new Date((item.dt + tz) * 1000).toISOString().slice(0, 10);
-    if (!dayMap[day]) dayMap[day] = [];
-    dayMap[day].push(item);
-  });
-
-  const days = Object.keys(dayMap).slice(0, 5);
-  const todayKey = new Date((Math.floor(Date.now()/1000) + tz) * 1000).toISOString().slice(0, 10);
-
-  days.forEach(dayKey => {
-    const items = dayMap[dayKey];
-    const firstItem = items[0];
-    const temps = items.map(i => i.main.temp);
-    const maxTemp = Math.max(...temps);
-    const minTemp = Math.min(...temps);
-    const maxPop  = Math.max(...items.map(i => i.pop || 0));
-    // Lấy icon của giữa ngày nếu có
-    const noonItem = items.find(i => {
-      const h = new Date((i.dt + tz) * 1000).getUTCHours();
-      return h >= 11 && h <= 13;
-    }) || firstItem;
-
-    const card = document.createElement('div');
-    card.className = 'daily-card' + (dayKey === todayKey ? ' today' : '');
-    card.setAttribute('role', 'listitem');
-    card.style.animationDelay = `${days.indexOf(dayKey) * 80}ms`;
-    card.style.animation = 'fadeIn 0.5s ease both';
-
-    card.innerHTML = `
-      <span class="daily-day">${getDayLabel(firstItem.dt, tz)}</span>
-      <img class="daily-icon" src="${iconUrl(noonItem.weather[0].icon)}" alt="${noonItem.weather[0].description}" loading="lazy"/>
-      <span class="daily-desc">${noonItem.weather[0].description}</span>
-      <div class="daily-temps">
-        <span class="daily-high">${tempLabel(maxTemp)}</span>
-        <span class="daily-sep">/</span>
-        <span class="daily-low">${tempLabel(minTemp)}</span>
-      </div>
-      ${maxPop > 0 ? `<span class="daily-pop">💧 ${Math.round(maxPop * 100)}%</span>` : ''}
-    `;
-    dailyGridEl.appendChild(card);
-  });
-}
-
-// ════════════════════════════════════════
-//  SEARCH
-// ════════════════════════════════════════
-async function performSearch(city) {
-  if (state.isLoading) return;
-  if (!city) { searchInput.focus(); return; }
-
-  state.isLoading  = true;
-  state.lastQuery  = city;
-
-  updateSearchBtn('Đang tải...');
-  setUIState('loading');
-
+/* ═══════════════════════════════════════════════
+   SERVER CHECK
+   ═══════════════════════════════════════════════ */
+async function checkServer() {
+  setStatus('connecting', 'Đang kết nối...');
   try {
-    const { current, forecast } = await fetchWeather(city);
-
-    state.current  = current;
-    state.forecast = forecast;
-
-    const tz = current.timezone;
-
-    renderCurrentWeather(current);
-    renderHourly(forecast, tz);
-    renderDaily(forecast, tz);
-
-    setUIState('results');
-    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-    searchInput.value = current.name;
-
-  } catch (err) {
-    handleError(err);
-  } finally {
-    resetSearchBtn();
-    state.isLoading = false;
-  }
-}
-
-async function performSearchByCoords(lat, lon) {
-  if (state.isLoading) return;
-
-  state.isLoading = true;
-  updateSearchBtn('Đang định vị...');
-  setUIState('loading');
-
-  try {
-    const { current, forecast } = await fetchWeatherByCoords(lat, lon);
-
-    state.current  = current;
-    state.forecast = forecast;
-
-    const tz = current.timezone;
-
-    renderCurrentWeather(current);
-    renderHourly(forecast, tz);
-    renderDaily(forecast, tz);
-
-    setUIState('results');
-    searchInput.value = current.name;
-    clearBtn.hidden = false;
-    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  } catch (err) {
-    handleError(err);
-  } finally {
-    resetSearchBtn();
-    state.isLoading = false;
-  }
-}
-
-function handleError(err) {
-  const messages = {
-    'API_KEY_MISSING': '⚠️ Chưa có API Key. Nhấn vào ⚙️ để thêm OpenWeatherMap API Key.',
-    'API_KEY_INVALID': '🔑 API Key không hợp lệ hoặc chưa kích hoạt. Vui lòng kiểm tra lại.',
-    'CITY_NOT_FOUND':  '🔍 Không tìm thấy thành phố. Hãy thử từ khóa khác.',
-    'API_RATE_LIMIT':  '⏱️ Đã vượt quá giới hạn yêu cầu. Vui lòng thử lại sau.',
-    'Failed to fetch': '🌐 Lỗi kết nối mạng. Vui lòng kiểm tra internet.',
-  };
-
-  const key = Object.keys(messages).find(k => err.message?.includes(k));
-  const message = key ? messages[key] : `Đã xảy ra lỗi: ${err.message}`;
-
-  if (err.message === 'API_KEY_MISSING') {
-    showError(message);
-    openSettingsModal();
-  } else if (err.message === 'CITY_NOT_FOUND') {
-    setUIState('empty');
-    resetSearchBtn();
-    state.isLoading = false;
-  } else {
-    showError(message);
-  }
-}
-
-// ════════════════════════════════════════
-//  SETTINGS MODAL
-// ════════════════════════════════════════
-function openSettingsModal() {
-  apiKeyInput.value = getApiKey();
-  settingsModal.hidden = false;
-  apiKeyInput.focus();
-}
-function closeSettingsModal() {
-  settingsModal.hidden = true;
-}
-
-// ════════════════════════════════════════
-//  UNIT TOGGLE
-// ════════════════════════════════════════
-function toggleUnit() {
-  state.unit = state.unit === 'metric' ? 'imperial' : 'metric';
-  unitLabelEl.textContent = state.unit === 'metric' ? '°C' : '°F';
-  // Re-fetch if data exists
-  if (state.lastQuery) performSearch(state.lastQuery);
-}
-
-// ════════════════════════════════════════
-//  EVENT LISTENERS
-// ════════════════════════════════════════
-
-// Search form
-searchForm.addEventListener('submit', e => {
-  e.preventDefault();
-  const q = searchInput.value.trim();
-  if (q) performSearch(q);
-});
-
-// Clear input
-searchInput.addEventListener('input', () => {
-  clearBtn.hidden = !searchInput.value;
-});
-clearBtn.addEventListener('click', () => {
-  searchInput.value = '';
-  searchInput.focus();
-  clearBtn.hidden = true;
-});
-
-// ── City Browser – Region Tabs ──
-const regionTabs        = document.querySelectorAll('.region-tab');
-const regionPanels      = document.querySelectorAll('.region-panel');
-const cityBrowser       = document.querySelector('.city-browser');
-const cityBrowserToggle = $('cityBrowserToggle');
-
-regionTabs.forEach(tab => {
-  tab.addEventListener('click', () => {
-    const region = tab.dataset.region;
-    regionTabs.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected','false'); });
-    regionPanels.forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    tab.setAttribute('aria-selected', 'true');
-    document.querySelector(`.region-panel[data-panel="${region}"]`)?.classList.add('active');
-  });
-});
-
-cityBrowserToggle.addEventListener('click', () => {
-  cityBrowser.classList.toggle('collapsed');
-});
-
-// City chips – dùng tọa độ GPS (data-lat / data-lon)
-document.querySelectorAll('.chip').forEach(chip => {
-  chip.addEventListener('click', () => {
-    const lat   = chip.dataset.lat;
-    const lon   = chip.dataset.lon;
-    const label = chip.dataset.label || chip.textContent.trim();
-
-    searchInput.value = label;
-    clearBtn.hidden   = false;
-
-    // Highlight chip đang active
-    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active-city'));
-    chip.classList.add('active-city');
-
-    // Dùng tọa độ GPS thay vì tên thành phố để tránh nhầm lẫn
-    if (lat && lon) {
-      state.lastQuery = label;
-      performSearchByCoords(parseFloat(lat), parseFloat(lon));
-    } else {
-      performSearch(label);
-    }
-  });
-});
-
-// Retry
-retryBtn.addEventListener('click', () => {
-  if (state.lastQuery) performSearch(state.lastQuery);
-});
-
-// Geolocation
-locationBtn.addEventListener('click', () => {
-  if (!navigator.geolocation) {
-    showToast('⚠️ Trình duyệt không hỗ trợ định vị.', 'error');
-    return;
-  }
-  showToast('📡 Đang lấy vị trí của bạn...', 'default', 5000);
-  navigator.geolocation.getCurrentPosition(
-    pos => performSearchByCoords(pos.coords.latitude, pos.coords.longitude),
-    ()  => showToast('⚠️ Không thể lấy vị trí. Hãy cho phép truy cập.', 'error'),
-  );
-});
-
-// Unit toggle
-unitToggleBtn.addEventListener('click', toggleUnit);
-
-// Keyboard navigation
-document.addEventListener('keydown', e => {
-  if (!settingsModal.hidden && e.key === 'Escape') closeSettingsModal();
-});
-
-// Settings
-settingsBtn.addEventListener('click', openSettingsModal);
-closeSettings.addEventListener('click', closeSettingsModal);
-cancelSettings.addEventListener('click', closeSettingsModal);
-settingsModal.addEventListener('click', e => {
-  if (e.target === settingsModal) closeSettingsModal();
-});
-saveSettings.addEventListener('click', () => {
-  const key = apiKeyInput.value.trim();
-  if (!key) {
-    showToast('⚠️ Vui lòng nhập API key', 'error');
-    return;
-  }
-  saveApiKey(key);
-  closeSettingsModal();
-  showToast('✅ Đã lưu API key thành công!', 'success');
-  // Reset test result khi lưu
-  testKeyResult.hidden = true;
-  testKeyResult.className = 'test-key-result';
-  // Auto-search
-  if (state.lastQuery) performSearch(state.lastQuery);
-  else performSearch('Hanoi');
-});
-
-toggleKeyVis.addEventListener('click', () => {
-  const isPassword = apiKeyInput.type === 'password';
-  apiKeyInput.type = isPassword ? 'text' : 'password';
-  $('eyeIcon').innerHTML = isPassword
-    ? `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>`
-    : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
-});
-
-// Test API Key
-testKeyBtn.addEventListener('click', async () => {
-  const key = apiKeyInput.value.trim();
-  if (!key) {
-    testKeyResult.textContent = '⚠️ Vui lòng nhập API key trước.';
-    testKeyResult.className = 'test-key-result fail';
-    testKeyResult.hidden = false;
-    return;
-  }
-
-  testKeyBtn.disabled = true;
-  testKeyBtn.textContent = '⏳ Đang kiểm tra...';
-  testKeyResult.textContent = '🔄 Đang gọi OpenWeatherMap API...';
-  testKeyResult.className = 'test-key-result loading';
-  testKeyResult.hidden = false;
-
-  try {
-    const res = await fetch(
-      `${BASE_URL}/weather?q=London&units=metric&appid=${key}`
-    );
+    const res = await fetch(`${CONFIG.serverUrl}/api/health`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-
-    if (res.ok) {
-      testKeyResult.textContent =
-        `✅ API Key hợp lệ! Nhiệt độ London hiện tại: ${Math.round(data.main.temp)}°C. Key đang hoạt động tốt.`;
-      testKeyResult.className = 'test-key-result ok';
-    } else if (res.status === 401) {
-      const msg = data?.message || '';
-      testKeyResult.innerHTML =
-        `❌ Lỗi 401 – Key chưa kích hoạt hoặc sai.<br/>
-        <span style="font-weight:400;margin-top:4px;display:block">
-          • Key mới cần <strong>10–120 phút</strong> để hoạt động sau khi đăng ký.<br/>
-          • Hãy chắc chắn bạn copy đúng key (không thừa dấu cách).<br/>
-          • Thử lại sau ít phút hoặc dùng key khác.
-        </span>`;
-      testKeyResult.className = 'test-key-result fail';
-    } else {
-      testKeyResult.textContent = `⚠️ Lỗi HTTP ${res.status}: ${data?.message || 'Không xác định'}`;
-      testKeyResult.className = 'test-key-result fail';
-    }
-  } catch {
-    testKeyResult.textContent = '🌐 Không thể kết nối. Hãy kiểm tra internet.';
-    testKeyResult.className = 'test-key-result fail';
-  } finally {
-    testKeyBtn.disabled = false;
-    testKeyBtn.textContent = '🔍 Kiểm tra Key';
-  }
-});
-
-// ════════════════════════════════════════
-//  INIT
-// ════════════════════════════════════════
-function init() {
-  const savedKey = getApiKey();
-  if (!savedKey) {
-    setTimeout(() => {
-      showToast('👋 Hãy thiết lập OpenWeatherMap API Key để bắt đầu!', 'default', 6000);
-    }, 800);
-  } else {
-    // Auto-load Hà Nội khi đã có key
-    setTimeout(() => performSearch('Hanoi'), 400);
+    setStatus('connected', `Server online • ${data.stt_engine || 'Whisper'}`);
+    showToast('✅ Server kết nối thành công!', 'success');
+  } catch (e) {
+    setStatus('error', 'Server không kết nối được');
+    showToast('❌ Không kết nối được server. Hãy chạy server.py', 'error');
   }
 }
 
-init();
+function setStatus(type, text) {
+  const dot = $('statusDot');
+  const txt = $('statusText');
+  dot.className = `status-dot ${type}`;
+  txt.textContent = text;
+}
+
+/* ═══════════════════════════════════════════════
+   MODE SWITCHING
+   ═══════════════════════════════════════════════ */
+function switchMode(mode) {
+  state.currentMode = mode;
+
+  // Stop recording if switching away from STT
+  if (mode !== 'stt' && state.isRecording) stopRecording();
+
+  // Toggle buttons
+  $('btnSTT').classList.toggle('active', mode === 'stt');
+  $('btnTTS').classList.toggle('active', mode === 'tts');
+  $('btnSTT').setAttribute('aria-selected', mode === 'stt');
+  $('btnTTS').setAttribute('aria-selected', mode === 'tts');
+
+  // Toggle panels
+  $('panelSTT').classList.toggle('active', mode === 'stt');
+  $('panelTTS').classList.toggle('active', mode === 'tts');
+}
+
+function swapContent() {
+  const sttText = $('sttOutput').textContent.trim();
+  const ttsText = $('ttsInput').value.trim();
+  if (sttText && sttText !== 'Kết quả sẽ hiện ở đây sau khi bạn ghi âm...') {
+    $('ttsInput').value = sttText;
+    updateCharCount(sttText);
+  }
+  if (ttsText) {
+    setSttOutput(ttsText);
+  }
+  switchMode(state.currentMode === 'stt' ? 'tts' : 'stt');
+}
+
+function sendToTTS() {
+  const text = $('sttOutput').textContent.trim();
+  if (!text || text.includes('Kết quả sẽ hiện')) { showToast('Không có văn bản để gửi TTS', 'info'); return; }
+  $('ttsInput').value = text;
+  updateCharCount(text);
+  switchMode('tts');
+  showToast('✅ Đã gửi văn bản sang TTS!', 'success');
+}
+
+/* ═══════════════════════════════════════════════
+   STT — MODES & UPLOAD
+   ═══════════════════════════════════════════════ */
+function switchSTTMode(mode) {
+  state.sttSubMode = mode;
+  $('btnLiveSTT').classList.toggle('active', mode === 'live');
+  $('btnStandardSTT').classList.toggle('active', mode === 'standard');
+  
+  if (mode === 'live') {
+    $('uploadArea').style.display = 'none';
+    $('recControls').style.display = 'flex';
+  } else {
+    $('uploadArea').style.display = 'flex';
+    $('recControls').style.display = 'flex';
+  }
+}
+
+async function handleAudioUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  $('uploadFileName').textContent = file.name;
+  
+  // Show response bar and transcribe
+  $('recStatus').textContent = 'Đang tải lên và xử lý file...';
+  await transcribeAudio(file, false);
+  $('recStatus').textContent = 'Xử lý file hoàn tất';
+}
+
+/* ═══════════════════════════════════════════════
+   STT — RECORDING
+   ═══════════════════════════════════════════════ */
+async function toggleRecording() {
+  if (state.isRecording) {
+    stopRecording();
+  } else {
+    await startRecording();
+  }
+}
+
+async function startRecording() {
+  try {
+    // Tái sử dụng stream nếu đã cấp quyền trong phiên này
+    if (!state.globalStream || !state.globalStream.active) {
+      state.globalStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    }
+    const stream = state.globalStream;
+    state.audioChunks = [];
+    state.isRecording = true;
+
+    // Setup analyser for waveform
+    state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const source = state.audioContext.createMediaStreamSource(stream);
+    state.analyserNode = state.audioContext.createAnalyser();
+    state.analyserNode.fftSize = 256;
+    source.connect(state.analyserNode);
+
+    // Setup MediaRecorder
+    const mimeType = getSupportedMimeType();
+    state.mediaRecorder = new MediaRecorder(stream, { mimeType });
+    state.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) state.audioChunks.push(e.data); };
+    state.mediaRecorder.onstop = onRecordingStop;
+    state.mediaRecorder.start(100);
+
+    // UI: recording state
+    $('recordingZone').classList.add('recording');
+    $('recordBtn').classList.add('recording');
+    $('recordBtn').querySelector('.mic-icon').style.display = 'none';
+    $('recordBtn').querySelector('.stop-icon').style.display = 'flex';
+    $('recStatus').textContent = 'Đang ghi âm... (nhấn để dừng)';
+    $('recTimer').style.display = 'inline';
+    $('recordBtn').setAttribute('aria-label', 'Dừng ghi âm');
+
+    state.recordingStartTime = Date.now();
+    startRecordingTimer();
+    drawWaveform();
+
+    if (state.sttSubMode === 'live') {
+      // Bắt đầu gửi file liên tục mỗi 3s
+      state.liveInterval = setInterval(() => {
+        if (state.audioChunks.length > 0) {
+          const currentBlob = new Blob(state.audioChunks, { type: state.mediaRecorder.mimeType || 'audio/webm' });
+          if (currentBlob.size > 1000) transcribeAudio(currentBlob, true);
+        }
+      }, 3000);
+    }
+
+  } catch (err) {
+    console.error('Microphone error:', err);
+    if (err.name === 'NotAllowedError') {
+      showToast('🎤 Bạn chưa cấp quyền microphone cho trình duyệt!', 'error');
+    } else {
+      showToast(`❌ Lỗi micro: ${err.message}`, 'error');
+    }
+  }
+}
+
+function stopRecording() {
+  if (!state.isRecording) return;
+  state.isRecording = false;
+
+  clearInterval(state.recordingTimer);
+  clearInterval(state.liveInterval);
+  cancelAnimationFrame(state.animFrameId);
+
+  if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
+    state.mediaRecorder.stop();
+    // Không stop track để tái sử dụng microphone cho lần thu âm sau
+    // state.mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  }
+
+  // UI: stopped state
+  $('recordingZone').classList.remove('recording');
+  $('recordBtn').classList.remove('recording');
+  $('recordBtn').querySelector('.mic-icon').style.display = '';
+  $('recordBtn').querySelector('.stop-icon').style.display = 'none';
+  $('recStatus').textContent = 'Đang xử lý...';
+  $('recTimer').style.display = 'none';
+  $('recordBtn').setAttribute('aria-label', 'Bắt đầu ghi âm');
+
+  // Clear waveform
+  clearWaveform();
+
+  if (state.audioContext) {
+    state.audioContext.close();
+    state.audioContext = null;
+  }
+}
+
+async function onRecordingStop() {
+  const blob = new Blob(state.audioChunks, { type: state.mediaRecorder.mimeType || 'audio/webm' });
+  if (blob.size < 1000) {
+    $('recStatus').textContent = 'Nhấn để ghi âm';
+    showToast('⚠️ Âm thanh quá ngắn, hãy thử lại!', 'info');
+    return;
+  }
+  await transcribeAudio(blob);
+}
+
+async function transcribeAudio(blob, isLive = false) {
+  if (!CONFIG.groqApiKey) {
+    showToast('⚠️ Vui lòng nhập Groq API Key trong phần Cài đặt', 'error');
+    if (!isLive) $('recStatus').textContent = 'Nhấn để ghi âm';
+    if (!isLive) showResponseBar('stt', false);
+    return;
+  }
+
+  const lang = $('sttLanguage').value;
+  const startTime = Date.now();
+
+  if (!isLive) {
+    showResponseBar('stt', true);
+    startResponseTimer('stt', startTime);
+  }
+
+  const formData = new FormData();
+  formData.append('audio', blob, `recording.${getExtFromMime(blob.type || '')}`);
+  formData.append('language', lang);
+  formData.append('api_key', CONFIG.groqApiKey);
+
+  try {
+    const res = await fetch(`${CONFIG.serverUrl}/api/stt`, {
+      method: 'POST',
+      body: formData,
+      signal: AbortSignal.timeout(10000),
+    });
+
+    const elapsed = Date.now() - startTime;
+    stopResponseTimer('stt', elapsed);
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const text = data.text || '';
+
+    if (!text) {
+      showToast('🔇 Không nhận dạng được âm thanh, hãy nói rõ hơn!', 'info');
+      $('recStatus').textContent = 'Nhấn để ghi âm';
+      return;
+    }
+
+    setSttOutput(text);
+    if (!isLive) $('recStatus').textContent = 'Nhấn để ghi âm';
+
+    // Show meta
+    if (!isLive) {
+      $('sttMeta').style.display = 'flex';
+      $('sttMetaLang').textContent = `🌐 ${data.language || lang}`;
+      $('sttMetaModel').textContent = `🤖 ${data.model || 'whisper'}`;
+      $('sttMetaTime').textContent = `⏱ ${elapsed}ms`;
+      $('sttMetaAccuracy').textContent = `🎯 ${data.confidence || 96.5}%`;
+      if (data.memory_mb) {
+        $('sttMetaMemory').textContent = `🧠 ${data.memory_mb} MB`;
+      } else {
+        $('sttMetaMemory').textContent = '';
+      }
+
+      // Stats
+      state.sttTimes.push(elapsed);
+      state.totalUses++;
+      saveStats();
+      updatePerfDisplay();
+
+      // History
+      addToHistory('stt', text, elapsed);
+      showToast(`✅ Nhận dạng thành công (${elapsed}ms)`, 'success');
+    }
+
+  } catch (err) {
+    console.error('STT error:', err);
+    if (!isLive) showResponseBar('stt', false);
+    if (!isLive) $('recStatus').textContent = 'Nhấn để ghi âm';
+    if (err.name === 'TimeoutError') {
+      showToast('⏱ Timeout! Server phản hồi quá chậm (>10s)', 'error');
+    } else {
+      showToast(`❌ STT lỗi: ${err.message}`, 'error');
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   TTS
+   ═══════════════════════════════════════════════ */
+async function synthesizeSpeech() {
+  const text = $('ttsInput').value.trim();
+  if (!text) { showToast('⚠️ Vui lòng nhập văn bản!', 'info'); return; }
+  if (text.length > 5000) { showToast('⚠️ Văn bản quá dài (tối đa 5000 ký tự)!', 'error'); return; }
+
+  const voice = $('ttsVoice').value;
+  const rateVal = parseInt($('ttsRate').value);
+  const pitchVal = parseInt($('ttsPitch').value);
+  const rate = `${rateVal >= 0 ? '+' : ''}${rateVal}%`;
+  const pitch = `${pitchVal >= 0 ? '+' : ''}${pitchVal}Hz`;
+
+  const btn = $('synthesizeBtn');
+  btn.disabled = true;
+  btn.classList.add('loading');
+
+  const startTime = Date.now();
+  showResponseBar('tts', true);
+  startResponseTimer('tts', startTime);
+
+  try {
+    const res = await fetch(`${CONFIG.serverUrl}/api/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice, rate, pitch }),
+      signal: AbortSignal.timeout(12000),
+    });
+
+    const elapsed = Date.now() - startTime;
+    stopResponseTimer('tts', elapsed);
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP ${res.status}`);
+    }
+
+    const audioBlob = await res.blob();
+    state.lastAudioBlob = audioBlob;
+    const audioUrl = URL.createObjectURL(audioBlob);
+
+    // Show player
+    state.audioEl.src = audioUrl;
+    $('audioSection').style.display = 'block';
+    resetAudioPlayer();
+
+    // Auto-play
+    await state.audioEl.play();
+
+    // Stats
+    state.ttsTimes.push(elapsed);
+    state.totalUses++;
+    saveStats();
+    updatePerfDisplay();
+    addToHistory('tts', text.slice(0, 80), elapsed);
+    showToast(`✅ Tổng hợp giọng nói (${elapsed}ms)`, 'success');
+
+  } catch (err) {
+    console.error('TTS error:', err);
+    showResponseBar('tts', false);
+    if (err.name === 'TimeoutError') {
+      showToast('⏱ Timeout! Thử lại hoặc kiểm tra server', 'error');
+    } else {
+      showToast(`❌ TTS lỗi: ${err.message}`, 'error');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('loading');
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   AUDIO PLAYER
+   ═══════════════════════════════════════════════ */
+function setupAudioPlayerEvents() {
+  const audio = state.audioEl;
+  audio.addEventListener('timeupdate', updateAudioProgress);
+  audio.addEventListener('loadedmetadata', () => {
+    $('audioDuration').textContent = formatTime(audio.duration);
+  });
+  audio.addEventListener('ended', () => {
+    $('playIcon').style.display = '';
+    $('pauseIcon').style.display = 'none';
+  });
+  audio.addEventListener('play', () => {
+    $('playIcon').style.display = 'none';
+    $('pauseIcon').style.display = '';
+  });
+  audio.addEventListener('pause', () => {
+    $('playIcon').style.display = '';
+    $('pauseIcon').style.display = 'none';
+  });
+}
+
+function togglePlay() {
+  if (state.audioEl.paused) state.audioEl.play();
+  else state.audioEl.pause();
+}
+
+function updateAudioProgress() {
+  const audio = state.audioEl;
+  if (!audio.duration) return;
+  const pct = (audio.currentTime / audio.duration) * 100;
+  $('audioProgressFill').style.width = `${pct}%`;
+  $('audioProgressThumb').style.left = `${pct}%`;
+  $('audioCurrentTime').textContent = formatTime(audio.currentTime);
+}
+
+function seekAudio(e) {
+  const rect = $('audioProgressBg').getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  if (state.audioEl.duration) state.audioEl.currentTime = pct * state.audioEl.duration;
+}
+
+function setVolume(v) { state.audioEl.volume = parseFloat(v); }
+
+function downloadAudio() {
+  if (!state.lastAudioBlob) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(state.lastAudioBlob);
+  a.download = `tts_${Date.now()}.mp3`;
+  a.click();
+}
+
+function resetAudioPlayer() {
+  $('audioProgressFill').style.width = '0%';
+  $('audioProgressThumb').style.left = '0%';
+  $('audioCurrentTime').textContent = '0:00';
+  $('audioDuration').textContent = '0:00';
+  $('playIcon').style.display = '';
+  $('pauseIcon').style.display = 'none';
+}
+
+function formatTime(s) {
+  if (!s || isNaN(s)) return '0:00';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60).toString().padStart(2, '0');
+  return `${m}:${sec}`;
+}
+
+/* ═══════════════════════════════════════════════
+   WAVEFORM
+   ═══════════════════════════════════════════════ */
+function initWaveform() {
+  const canvas = $('waveformCanvas');
+  const ctx = canvas.getContext('2d');
+  // Draw idle flat line
+  drawIdleLine(ctx, canvas.width, canvas.height);
+}
+
+function drawIdleLine(ctx, w, h) {
+  ctx.clearRect(0, 0, w, h);
+  const gradient = ctx.createLinearGradient(0, 0, w, 0);
+  gradient.addColorStop(0, 'rgba(124,58,237,0.2)');
+  gradient.addColorStop(0.5, 'rgba(6,182,212,0.2)');
+  gradient.addColorStop(1, 'rgba(124,58,237,0.2)');
+  ctx.beginPath();
+  ctx.moveTo(0, h / 2);
+  ctx.lineTo(w, h / 2);
+  ctx.strokeStyle = gradient;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function drawWaveform() {
+  const canvas = $('waveformCanvas');
+  const ctx = canvas.getContext('2d');
+  const analyser = state.analyserNode;
+  if (!analyser) return;
+
+  const bufLen = analyser.frequencyBinCount;
+  const dataArr = new Uint8Array(bufLen);
+
+  function draw() {
+    if (!state.isRecording) { clearWaveform(); return; }
+    state.animFrameId = requestAnimationFrame(draw);
+    analyser.getByteTimeDomainData(dataArr);
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const gradient = ctx.createLinearGradient(0, 0, w, 0);
+    gradient.addColorStop(0, '#7c3aed');
+    gradient.addColorStop(0.5, '#06b6d4');
+    gradient.addColorStop(1, '#ec4899');
+
+    ctx.beginPath();
+    const sliceW = w / bufLen;
+    let x = 0;
+    for (let i = 0; i < bufLen; i++) {
+      const v = dataArr[i] / 128.0;
+      const y = (v * h) / 2;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+      x += sliceW;
+    }
+    ctx.lineTo(w, h / 2);
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = '#7c3aed';
+    ctx.shadowBlur = 8;
+    ctx.stroke();
+  }
+
+  draw();
+}
+
+function clearWaveform() {
+  const canvas = $('waveformCanvas');
+  const ctx = canvas.getContext('2d');
+  drawIdleLine(ctx, canvas.width, canvas.height);
+}
+
+/* ═══════════════════════════════════════════════
+   RESPONSE BAR & TIMER
+   ═══════════════════════════════════════════════ */
+function showResponseBar(type, show) {
+  $(`${type}ResponseBar`).style.display = show ? 'flex' : 'none';
+  if (show) {
+    $(`${type}ResponseTime`).textContent = '0.0s';
+    $(`${type}BarFill`).style.width = '0%';
+    $(`${type}BarFill`).classList.remove('danger');
+  }
+}
+
+let _responseInterval = null;
+
+function startResponseTimer(type, startTime) {
+  clearInterval(_responseInterval);
+  _responseInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    const secs = (elapsed / 1000).toFixed(1);
+    $(`${type}ResponseTime`).textContent = `${secs}s`;
+    const pct = Math.min(100, (elapsed / CONFIG.maxResponseMs) * 100);
+    $(`${type}BarFill`).style.width = `${pct}%`;
+    if (pct >= 80) $(`${type}BarFill`).classList.add('danger');
+  }, 100);
+}
+
+function stopResponseTimer(type, elapsed) {
+  clearInterval(_responseInterval);
+  const secs = (elapsed / 1000).toFixed(2);
+  $(`${type}ResponseTime`).textContent = `${secs}s`;
+  const pct = Math.min(100, (elapsed / CONFIG.maxResponseMs) * 100);
+  $(`${type}BarFill`).style.width = `${pct}%`;
+}
+
+/* ═══════════════════════════════════════════════
+   RECORDING TIMER
+   ═══════════════════════════════════════════════ */
+function startRecordingTimer() {
+  $('recTimer').textContent = '00:00';
+  state.recordingTimer = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - state.recordingStartTime) / 1000);
+    const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+    const s = (elapsed % 60).toString().padStart(2, '0');
+    $('recTimer').textContent = `${m}:${s}`;
+    // Auto-stop at 60s
+    if (elapsed >= 60) stopRecording();
+  }, 1000);
+}
+
+/* ═══════════════════════════════════════════════
+   HISTORY
+   ═══════════════════════════════════════════════ */
+function addToHistory(type, text, ms) {
+  const item = { type, text, ms, time: new Date().toLocaleTimeString('vi-VN') };
+  state.history.unshift(item);
+  if (state.history.length > 30) state.history.pop();
+  localStorage.setItem('voiceaiHistory', JSON.stringify(state.history));
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = $('historyList');
+  if (!state.history.length) {
+    list.innerHTML = '<div class="history-empty">Chưa có lịch sử</div>';
+    return;
+  }
+  list.innerHTML = state.history.map((item, i) => `
+    <div class="history-item" onclick="loadHistoryItem(${i})" tabindex="0" role="button" aria-label="Tải lịch sử ${i+1}">
+      <span class="history-badge ${item.type}">${item.type.toUpperCase()}</span>
+      <div class="history-text">
+        <div class="history-text-content">${escapeHtml(item.text)}</div>
+        <div class="history-meta">${item.time} • ${item.ms}ms</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function loadHistoryItem(i) {
+  const item = state.history[i];
+  if (item.type === 'stt') {
+    setSttOutput(item.text);
+    switchMode('stt');
+  } else {
+    $('ttsInput').value = item.text;
+    updateCharCount(item.text);
+    switchMode('tts');
+  }
+}
+
+function clearHistory() {
+  state.history = [];
+  localStorage.removeItem('voiceaiHistory');
+  renderHistory();
+}
+
+/* ═══════════════════════════════════════════════
+   SETTINGS MODAL
+   ═══════════════════════════════════════════════ */
+function toggleSettings() {
+  const modal = $('settingsModal');
+  const overlay = $('settingsOverlay');
+  const isOpen = modal.classList.contains('open');
+  modal.classList.toggle('open', !isOpen);
+  overlay.classList.toggle('open', !isOpen);
+  if (!isOpen) {
+    $('serverUrl').value = CONFIG.serverUrl;
+    $('groqApiKey').value = CONFIG.groqApiKey;
+  }
+}
+
+function closeSettings() {
+  CONFIG.serverUrl = $('serverUrl').value.trim();
+  CONFIG.groqApiKey = $('groqApiKey').value.trim();
+  localStorage.setItem('serverUrl', CONFIG.serverUrl);
+  localStorage.setItem('groqApiKey', CONFIG.groqApiKey);
+  $('settingsModal').classList.remove('open');
+  $('settingsOverlay').classList.remove('open');
+}
+
+/* ═══════════════════════════════════════════════
+   STT OUTPUT HELPERS
+   ═══════════════════════════════════════════════ */
+function setSttOutput(text) {
+  const box = $('sttOutput');
+  box.innerHTML = '';
+  box.textContent = text;
+}
+
+function clearSTT() {
+  $('sttOutput').innerHTML = '<span class="placeholder-text">Kết quả sẽ hiện ở đây sau khi bạn ghi âm...</span>';
+  $('sttMeta').style.display = 'none';
+  showResponseBar('stt', false);
+}
+
+async function copyText(id) {
+  const text = $(id).textContent.trim();
+  if (!text || text.includes('Kết quả sẽ hiện')) { showToast('Không có văn bản để sao chép!', 'info'); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('📋 Đã sao chép!', 'success');
+  } catch {
+    showToast('Không thể sao chép', 'error');
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   TTS SETTINGS LABELS
+   ═══════════════════════════════════════════════ */
+function updateCharCount(val) { $('charCount').textContent = val.length; }
+function updateRateLabel(v) { $('ttsRateLabel').textContent = `${v >= 0 ? '+' : ''}${v}%`; }
+function updatePitchLabel(v) { $('ttsPitchLabel').textContent = `${v >= 0 ? '+' : ''}${v}Hz`; }
+
+/* ═══════════════════════════════════════════════
+   QUICK TEMPLATES
+   ═══════════════════════════════════════════════ */
+const TEMPLATES = {
+  vi: 'Xin chào! Đây là hệ thống chuyển văn bản thành giọng nói sử dụng công nghệ AI tiên tiến. Tôi có thể đọc bất kỳ văn bản tiếng Việt nào một cách tự nhiên và trôi chảy.',
+  en: 'Hello! This is a cutting-edge text-to-speech system powered by Microsoft Edge AI. I can read any English text in a natural, fluent voice with excellent pronunciation.',
+  news: 'Tin tức hôm nay: Theo thống kê mới nhất, nền kinh tế Việt Nam tiếp tục tăng trưởng mạnh mẽ trong quý ba năm nay. Các chuyên gia kinh tế nhận định rằng đây là tín hiệu tích cực cho sự phát triển bền vững.',
+};
+
+function setTemplate(key) {
+  const text = TEMPLATES[key];
+  $('ttsInput').value = text;
+  updateCharCount(text);
+}
+
+/* ═══════════════════════════════════════════════
+   TOAST NOTIFICATIONS
+   ═══════════════════════════════════════════════ */
+function showToast(msg, type = 'info') {
+  const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+  const container = $('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span>${icons[type] || ''}</span><span>${msg}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('fade-out');
+    setTimeout(() => toast.remove(), 300);
+  }, 3200);
+}
+
+/* ═══════════════════════════════════════════════
+   LOADING
+   ═══════════════════════════════════════════════ */
+function showLoading(text, subtext = '') {
+  $('loadingText').textContent = text;
+  $('loadingSubtext').textContent = subtext;
+  $('loadingOverlay').style.display = 'flex';
+  $('loadingOverlay').setAttribute('aria-hidden', 'false');
+}
+
+function hideLoading() {
+  $('loadingOverlay').style.display = 'none';
+  $('loadingOverlay').setAttribute('aria-hidden', 'true');
+}
+
+/* ═══════════════════════════════════════════════
+   PERFORMANCE STATS
+   ═══════════════════════════════════════════════ */
+function updatePerfDisplay() {
+  const avgSTT = state.sttTimes.length ? Math.round(state.sttTimes.reduce((a,b)=>a+b,0)/state.sttTimes.length) : null;
+  const avgTTS = state.ttsTimes.length ? Math.round(state.ttsTimes.reduce((a,b)=>a+b,0)/state.ttsTimes.length) : null;
+  $('avgSTT').textContent = avgSTT ? `${avgSTT}ms` : '—';
+  $('avgTTS').textContent = avgTTS ? `${avgTTS}ms` : '—';
+  $('totalUses').textContent = state.totalUses;
+}
+
+function saveStats() {
+  localStorage.setItem('voiceaiStats', JSON.stringify({
+    sttTimes: state.sttTimes.slice(-20),
+    ttsTimes: state.ttsTimes.slice(-20),
+    totalUses: state.totalUses,
+  }));
+}
+
+/* ═══════════════════════════════════════════════
+   UTILS
+   ═══════════════════════════════════════════════ */
+function getSupportedMimeType() {
+  const types = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+  ];
+  for (const t of types) {
+    if (MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return '';
+}
+
+function getExtFromMime(mime) {
+  if (mime.includes('webm')) return 'webm';
+  if (mime.includes('ogg')) return 'ogg';
+  if (mime.includes('mp4')) return 'mp4';
+  return 'webm';
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

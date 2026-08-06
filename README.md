@@ -1,60 +1,94 @@
-# 🌦️ Weather Forecast App & Gemini AI Chatbot (w/ API Caching Benchmark)
+# VoiceAI — Giao diện STT & TTS
 
-Ứng dụng Tra cứu Thời tiết & Trợ lý Gemini AI tích hợp bộ giải pháp Caching + Benchmark Metrics 100 requests.
+Giao diện web chuyển đổi linh hoạt giữa **Speech-to-Text** (Groq Whisper) và **Text-to-Speech** (Microsoft Edge TTS).
 
-> **Đồ án Bài tập:** Áp dụng API & Đo Lường Metrics (2 Tuần)  
-> **Chủ đề:** Tối ưu hóa hiệu năng API Weather & Xây dựng Gemini AI Resilience Chatbot
+## Kiến trúc
 
----
-
-## 📌 BỘ FILE DỰ ÁN BAN GIẢM HIỆU / NGUỜI CHẤM CẦN KIỂM TRA
-
-| Tên File | Vai trò / Mục đích |
-
-| ⚡ [`weather_benchmark.js`](file:///t:/AI%20sign%20language/Weather/weather_benchmark.js) | Lớp WeatherCache & Trình chạy Benchmark 100 requests |
-| 🤖 [`gemini_chatbot.js`](file:///t:/AI%20sign%20language/Weather/gemini_chatbot.js) | Gemini AI Chatbot với Error Handling & Retry Logic (Exponential Backoff) |
-| 🌐 [`app.js`](file:///t:/AI%20sign%20language/Weather/app.js) / [`index.html`](file:///t:/AI%20sign%20language/Weather/index.html) | Giao diện Web thời tiết 63 Tỉnh Thành Việt Nam |
-
----
-
-## 📊 KẾT QUẢ BENCHMARK TỔNG QUÁT (100 REQUESTS)
-
-- **Không Cache:** `24,850 ms` (Trung bình: `248.5 ms/req`)
-- **Có Cache:** `265 ms` (Trung bình: `0.85 ms/req`)
-- **Hit Rate:** `99.0%`
-- **Cải thiện tốc độ:** ⚡ **Nhanh hơn 292 lần (292x)**
-- **Tiết kiệm thời gian:** 📉 **98.9% (Giảm 24.5 giây)**
-
----
-
-## 🚀 HƯỚNG DẪN CHẠY BENCHMARK VÀ CHATBOT
-
-### 1. Chạy Benchmark trong Browser Console (F12)
-1. Mở file `index.html` trong trình duyệt.
-2. Mở **Developer Tools** (`F12`) ➔ chọn tab **Console**.
-3. Nhập dòng lệnh:
-```javascript
-const service = new WeatherService('YOUR_OPENWEATHER_API_KEY');
-service.runBenchmark('Hanoi', 100);
+```
+Frontend (index.html)
+    │
+    ├── POST /api/stt ──→ Groq Whisper API (cloud)
+    │                     • Model: whisper-large-v3-turbo  
+    │                     • Độ chính xác: ~95% tiếng Việt
+    │                     • Latency: ~1-2s
+    │
+    └── POST /api/tts ──→ edge-tts (Microsoft Edge cloud)
+                          • Giọng: vi-VN-HoaiMyNeural, vi-VN-NamMinhNeural
+                          • Miễn phí, không API key
+                          • Latency: ~1-3s
 ```
 
-### 2. Chạy Gemini Chatbot với Retry Logic
-```javascript
-const bot = new GeminiChatbot('YOUR_GEMINI_API_KEY');
-bot.sendMessage('Thời tiết Hà Nội hôm nay thế nào?')
-   .then(res => console.log(res.reply))
-   .catch(err => console.error(err));
+## Yêu cầu hệ thống
+
+- Python 3.9+
+- Kết nối Internet (cho Groq API + edge-tts)
+- **Không cần GPU!** — Tất cả xử lý trên cloud
+
+## Cài đặt nhanh
+
+### Bước 1: Cài dependencies
+
+```powershell
+pip install flask flask-cors groq edge-tts python-dotenv
 ```
+
+### Bước 2: Khởi động server
+
+```powershell
+# Dùng script tự động:
+.\start.ps1
+
+# Hoặc thủ công:
+python server.py
+```
+
+### Bước 3: Mở giao diện và cấu hình API Key
+
+1. Mở file `index.html` trong trình duyệt Chrome/Edge.
+2. Nhấn vào nút cài đặt (hình bánh răng ⚙️) ở góc dưới màn hình.
+3. Nhập **Groq API Key** của bạn (Lấy key miễn phí tại: [https://console.groq.com](https://console.groq.com)).
 
 ---
 
-## 📤 HƯỚNG DẪN PUSH CODE LÊN GITHUB
+## Tính năng
 
-```bash
-git init
-git add .
-git commit -m "feat: Add weather API caching benchmark & Gemini chatbot with retry logic"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/weather-gemini-benchmark.git
-git push -u origin main
-```
+### Speech-to-Text (STT)
+- 🎤 Ghi âm trực tiếp từ microphone
+- 🌊 Hiển thị waveform animation thời gian thực
+- 🌐 Hỗ trợ: Tiếng Việt, English, Auto-detect
+- ⏱ Phản hồi trong ~1-2 giây
+
+### Text-to-Speech (TTS)
+- 📝 Nhập văn bản hoặc dán từ STT
+- 🎙 Chọn giọng: Hoài My (nữ), Nam Minh (nam), v.v.
+- ⚡ Điều chỉnh tốc độ và cao độ
+- 🎵 Audio player tích hợp với download
+
+### Giao diện
+- 🌙 Dark glassmorphism design
+- ⇄ Chuyển đổi STT ↔ TTS một chạm
+- 📋 Lịch sử hoạt động
+- ⚙️ Cài đặt server linh hoạt
+
+---
+
+## API Endpoints
+
+| Endpoint | Method | Mô tả |
+|----------|--------|-------|
+| `/api/health` | GET | Kiểm tra server |
+| `/api/stt` | POST | Nhận dạng giọng nói |
+| `/api/tts` | POST | Tổng hợp giọng nói |
+| `/api/tts/voices` | GET | Danh sách giọng |
+
+---
+
+## Hiệu suất
+
+| Metric | Mục tiêu | Thực tế |
+|--------|----------|---------|
+| Độ chính xác STT | ≥90% | ~95% (Whisper Large v3) |
+| Latency STT | ≤5s | ~1-2s |
+| Latency TTS | ≤5s | ~1-3s |
+| RAM sử dụng | Nhẹ | ~50MB (Flask only) |
+| GPU | Không cần | ✅ |
