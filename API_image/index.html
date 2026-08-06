@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VisualSearch – Tìm kiếm hình ảnh AI</title>
+  <meta name="description" content="Tìm kiếm hình ảnh đẹp từ Unsplash chỉ bằng một câu mô tả. Powered by Unsplash API." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Animated background orbs -->
+  <div class="bg-orbs" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <header class="site-header">
+    <div class="logo">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="url(#logoGrad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <defs>
+          <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#a78bfa"/>
+            <stop offset="100%" stop-color="#60a5fa"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span>VisualSearch</span>
+    </div>
+    <nav class="header-actions">
+      <button id="benchmarkBtn" class="btn-benchmark" title="So sánh 3 cách gọi API (Sync, Batch, Async)">
+        ⚡ API Benchmark
+      </button>
+      <button id="settingsBtn" class="icon-btn" title="Cài đặt API Key" aria-label="Mở cài đặt API Key">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M4.93 4.93A10 10 0 0 1 19.07 19.07"/>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+      </button>
+    </nav>
+  </header>
+
+  <main class="main-content">
+    <!-- Hero Section -->
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-badge">✨ Powered by Unsplash</div>
+      <h1 id="hero-title" class="hero-title">
+        Nhập văn bản,<br/>
+        <span class="gradient-text">nhận hình ảnh</span>
+      </h1>
+      <p class="hero-subtitle">Mô tả bất kỳ điều gì bạn muốn xem và chúng tôi sẽ tìm những hình ảnh đẹp nhất cho bạn.</p>
+
+      <!-- Search Form -->
+      <form id="searchForm" class="search-form" role="search" aria-label="Tìm kiếm hình ảnh">
+        <div class="search-wrapper">
+          <div class="search-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </div>
+          <input
+            id="searchInput"
+            type="text"
+            class="search-input"
+            placeholder="VD: Hoàng hôn trên biển, rừng xanh mùa thu..."
+            autocomplete="off"
+            aria-label="Nhập từ khóa tìm kiếm"
+            required
+          />
+          <button id="clearBtn" class="clear-btn" type="button" aria-label="Xóa nội dung" hidden>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="search-controls">
+          <div class="filter-group">
+            <label class="filter-label" for="orientationFilter">Hướng</label>
+            <select id="orientationFilter" class="filter-select" aria-label="Lọc theo hướng">
+              <option value="">Tất cả</option>
+              <option value="landscape">Ngang</option>
+              <option value="portrait">Dọc</option>
+              <option value="squarish">Vuông</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label class="filter-label" for="countFilter">Số lượng</label>
+            <select id="countFilter" class="filter-select" aria-label="Số lượng ảnh">
+              <option value="12">12 ảnh</option>
+              <option value="20" selected>20 ảnh</option>
+              <option value="30">30 ảnh</option>
+            </select>
+          </div>
+          <button id="searchBtn" type="submit" class="search-btn" aria-label="Tìm kiếm">
+            <span class="btn-text">Tìm kiếm</span>
+            <svg class="btn-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </button>
+        </div>
+      </form>
+
+      <!-- Suggestion chips -->
+      <div class="suggestions" role="list" aria-label="Gợi ý tìm kiếm">
+        <span class="suggestions-label">Gợi ý:</span>
+        <button class="chip" role="listitem" data-query="mountain landscape">🏔️ Núi non</button>
+        <button class="chip" role="listitem" data-query="ocean sunset">🌅 Hoàng hôn biển</button>
+        <button class="chip" role="listitem" data-query="city night lights">🌃 Thành phố đêm</button>
+        <button class="chip" role="listitem" data-query="forest autumn">🍂 Rừng thu</button>
+        <button class="chip" role="listitem" data-query="flower bloom">🌸 Hoa nở</button>
+        <button class="chip" role="listitem" data-query="architecture modern">🏙️ Kiến trúc</button>
+      </div>
+    </section>
+
+    <!-- Status bar -->
+    <div id="statusBar" class="status-bar" hidden aria-live="polite"></div>
+
+    <!-- Loading Skeleton -->
+    <div id="loadingState" class="loading-state" hidden aria-label="Đang tải" aria-busy="true">
+      <div class="skeleton-grid">
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+      </div>
+    </div>
+
+    <!-- Error State -->
+    <div id="errorState" class="error-state" hidden role="alert">
+      <div class="error-icon">⚠️</div>
+      <h2 class="error-title">Đã xảy ra lỗi</h2>
+      <p id="errorMsg" class="error-msg"></p>
+      <button id="retryBtn" class="retry-btn">Thử lại</button>
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="empty-state" hidden>
+      <div class="empty-icon">🔍</div>
+      <h2 class="empty-title">Không tìm thấy kết quả</h2>
+      <p class="empty-msg">Hãy thử từ khóa khác hoặc mô tả chi tiết hơn.</p>
+    </div>
+
+    <!-- Results Section -->
+    <section id="resultsSection" class="results-section" hidden aria-label="Kết quả hình ảnh">
+      <div class="results-header">
+        <h2 id="resultsTitle" class="results-title"></h2>
+        <div class="view-controls">
+          <button id="gridView" class="view-btn active" title="Dạng lưới" aria-label="Xem dạng lưới" aria-pressed="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </button>
+          <button id="masonryView" class="view-btn" title="Dạng masonry" aria-label="Xem dạng masonry" aria-pressed="false">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="11"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="17" width="7" height="4"/><rect x="14" y="13" width="7" height="8"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="imageGrid" class="image-grid" role="list"></div>
+      <button id="loadMoreBtn" class="load-more-btn" hidden>
+        <span>Tải thêm</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+    </section>
+  </main>
+
+  <!-- Image Lightbox Modal -->
+  <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="Xem ảnh phóng to">
+    <button id="lightboxClose" class="lightbox-close" aria-label="Đóng">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+    <button id="lightboxPrev" class="lightbox-nav lightbox-prev" aria-label="Ảnh trước">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </button>
+    <button id="lightboxNext" class="lightbox-nav lightbox-next" aria-label="Ảnh tiếp">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+    </button>
+    <div class="lightbox-content">
+      <img id="lightboxImg" src="" alt="" class="lightbox-image" />
+      <div class="lightbox-info">
+        <div class="lightbox-meta">
+          <div class="lightbox-author">
+            <img id="lightboxAvatar" src="" alt="" class="author-avatar" />
+            <div>
+              <p id="lightboxAuthorName" class="author-name"></p>
+              <p id="lightboxAuthorHandle" class="author-handle"></p>
+            </div>
+          </div>
+          <div class="lightbox-stats">
+            <span id="lightboxLikes" class="stat">❤️ <span></span></span>
+            <span id="lightboxDownloads" class="stat">⬇️ <span></span></span>
+          </div>
+        </div>
+        <div class="lightbox-actions">
+          <a id="lightboxDownload" href="#" class="action-btn primary" download aria-label="Tải xuống ảnh">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Tải xuống
+          </a>
+          <a id="lightboxUnsplash" href="#" target="_blank" rel="noopener" class="action-btn secondary" aria-label="Xem trên Unsplash">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            Unsplash
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Key Settings Modal -->
+  <div id="settingsModal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 id="settingsTitle" class="modal-title">⚙️ Cài đặt API Key</h2>
+        <button id="closeSettings" class="icon-btn" aria-label="Đóng cài đặt">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Nhập Unsplash Access Key của bạn. Bạn có thể lấy key miễn phí tại <a href="https://unsplash.com/developers" target="_blank" rel="noopener" class="link">unsplash.com/developers</a>.</p>
+        <div class="input-group">
+          <label for="apiKeyInput" class="input-label">Access Key</label>
+          <div class="api-input-wrapper">
+            <input id="apiKeyInput" type="password" class="text-input" placeholder="Dán API key của bạn vào đây..." autocomplete="off" />
+            <button id="toggleKeyVisibility" class="toggle-vis-btn" type="button" aria-label="Hiển thị/ẩn API key">
+              <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="modal-info-box">
+          <p>🔐 API key được lưu cục bộ trong trình duyệt, không gửi lên server nào.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="cancelSettings" class="btn-ghost">Hủy</button>
+        <button id="saveSettings" class="btn-primary">Lưu cài đặt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Benchmark Modal -->
+  <div id="benchmarkModal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="benchmarkTitle">
+    <div class="modal-box benchmark-modal-box">
+      <div class="modal-header">
+        <h2 id="benchmarkTitle" class="modal-title">⚡ API Performance Benchmark Suite</h2>
+        <button id="closeBenchmark" class="icon-btn" aria-label="Đóng Benchmark">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <p class="modal-desc">So sánh trực tiếp thời gian thực thi, latency và throughput của 3 mô hình gọi API khi khởi tạo/tải ảnh AI.</p>
+        
+        <!-- Controls -->
+        <div class="benchmark-controls-panel">
+          <div class="filter-group">
+            <label class="filter-label" for="bmRequestCount">Số lượng Request (N)</label>
+            <select id="bmRequestCount" class="filter-select">
+              <option value="6">6 Requests</option>
+              <option value="12" selected>12 Requests</option>
+              <option value="20">20 Requests</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label" for="bmBatchSize">Kích thước Batch (k)</label>
+            <select id="bmBatchSize" class="filter-select">
+              <option value="2">Batch k = 2</option>
+              <option value="4" selected>Batch k = 4</option>
+              <option value="6">Batch k = 6</option>
+            </select>
+          </div>
+
+          <button id="startBenchmarkBtn" class="btn-primary start-bm-btn">
+            🚀 Chạy So Sánh 3 Phương Pháp
+          </button>
+        </div>
+
+        <!-- Realtime Visualizer Progress -->
+        <div id="bmProgressSection" class="bm-progress-section" hidden>
+          <div class="bm-mode-progress">
+            <div class="bm-mode-header">
+              <span class="bm-mode-name">1. Synchronous (Nối tiếp)</span>
+              <span id="bmSyncStatus" class="bm-status-pill pending">Đang chờ...</span>
+            </div>
+            <div class="bm-bar-wrapper">
+              <div id="bmSyncBar" class="bm-bar sync-bar" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div class="bm-mode-progress">
+            <div class="bm-mode-header">
+              <span class="bm-mode-name">2. Batch Processing (Lô)</span>
+              <span id="bmBatchStatus" class="bm-status-pill pending">Đang chờ...</span>
+            </div>
+            <div class="bm-bar-wrapper">
+              <div id="bmBatchBar" class="bm-bar batch-bar" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div class="bm-mode-progress">
+            <div class="bm-mode-header">
+              <span class="bm-mode-name">3. Asynchronous (Song song)</span>
+              <span id="bmAsyncStatus" class="bm-status-pill pending">Đang chờ...</span>
+            </div>
+            <div class="bm-bar-wrapper">
+              <div id="bmAsyncBar" class="bm-bar async-bar" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results Table -->
+        <div id="bmResultsSection" class="bm-results-section" hidden>
+          <h3 class="bm-results-heading">📊 Kết quả Đo đạc Thực nghiệm</h3>
+          
+          <div class="bm-cards-grid">
+            <div class="bm-summary-card sync-card">
+              <div class="card-tag">SYNC</div>
+              <div class="card-val" id="bmSyncTime">— ms</div>
+              <div class="card-sub" id="bmSyncTps">— req/s</div>
+              <div class="card-speedup">1.00x (Base)</div>
+            </div>
+
+            <div class="bm-summary-card batch-card">
+              <div class="card-tag">BATCH</div>
+              <div class="card-val" id="bmBatchTime">— ms</div>
+              <div class="card-sub" id="bmBatchTps">— req/s</div>
+              <div class="card-speedup highlight" id="bmBatchSpeedup">—x</div>
+            </div>
+
+            <div class="bm-summary-card async-card">
+              <div class="card-tag">ASYNC</div>
+              <div class="card-val" id="bmAsyncTime">— ms</div>
+              <div class="card-sub" id="bmAsyncTps">— req/s</div>
+              <div class="card-speedup highlight-green" id="bmAsyncSpeedup">—x</div>
+            </div>
+          </div>
+
+          <table class="bm-table">
+            <thead>
+              <tr>
+                <th>Mô hình gọi API</th>
+                <th>Tổng thời gian</th>
+                <th>Throughput</th>
+                <th>Latency TB</th>
+                <th>Thành công</th>
+                <th>Speedup</th>
+              </tr>
+            </thead>
+            <tbody id="bmTableBody">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+
+          <div class="report-link-box">
+            <span>📖 Xem báo cáo nghiên cứu chi tiết tại:</span>
+            <a href="./API_CALL_COMPARISON_REPORT.md" target="_blank" class="report-file-link">API_CALL_COMPARISON_REPORT.md</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <footer class="site-footer">
+    <p>Hình ảnh được cung cấp bởi <a href="https://unsplash.com" target="_blank" rel="noopener" class="link">Unsplash</a> · Xây dựng với ❤️</p>
+  </footer>
+
+  <script src="benchmark.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
